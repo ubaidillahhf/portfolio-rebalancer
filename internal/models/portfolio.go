@@ -1,8 +1,9 @@
 package models
 
 type Portfolio struct {
-	UserID     string             `json:"user_id"`
-	Allocation map[string]float64 `json:"allocation"` // Current user allocation in percentage terms
+	UserID             string             `json:"user_id"`
+	Allocation         map[string]float64 `json:"allocation"`          // Current user allocation in percentage terms
+	OriginalAllocation map[string]float64 `json:"original_allocation"` // Target allocation to maintain
 }
 
 type UpdatedPortfolio struct {
@@ -11,5 +12,9 @@ type UpdatedPortfolio struct {
 }
 
 type RebalanceTransaction struct {
-	// TODO: Add model
+	UserID           string  `json:"user_id"`
+	Action           string  `json:"action"`            // BUY or SELL
+	Asset            string  `json:"asset"`             // stocks, bonds, gold, etc.
+	RebalancePercent float64 `json:"rebalance_percent"` // percentage to buy/sell
+	Timestamp        string  `json:"timestamp"`
 }

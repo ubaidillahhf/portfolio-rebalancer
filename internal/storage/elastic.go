@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +14,11 @@ import (
 )
 
 var esClient *elasticsearch.Client
+
+// GetElasticsearchClient returns the Elasticsearch client instance
+func GetElasticsearchClient() *elasticsearch.Client {
+	return esClient
+}
 
 // InitElastic initializes elasticsearch connection with retry logic
 func InitElastic() error {
@@ -46,26 +50,6 @@ func InitElastic() error {
 	}
 
 	return fmt.Errorf("failed to connect to Elasticsearch after retries: %w", err)
-}
-
-func SavePortfolio(ctx context.Context, p models.Portfolio) error {
-	body, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-
-	res, err := esClient.Index("portfolios", bytes.NewReader(body), esClient.Index.WithDocumentID(p.UserID))
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("error saving portfolio: %s", res.String())
-	}
-
-	log.Printf("Portfolio saved for user %s", p.UserID)
-	return nil
 }
 
 func GetPortfolio(ctx context.Context, userID string) (*models.Portfolio, error) {
