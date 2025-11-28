@@ -9,6 +9,8 @@ import (
 
 type PortfolioService interface {
 	CreatePortfolio(ctx context.Context, p models.Portfolio) (*models.Portfolio, error)
+	GetPortfolio(ctx context.Context, userID string) (*models.Portfolio, error)
+	UpdatePortfolio(ctx context.Context, portfolio models.Portfolio) error
 }
 
 // PortfolioServiceImpl handles portfolio business logic
@@ -52,4 +54,38 @@ func (s *PortfolioServiceImpl) CreatePortfolio(ctx context.Context, p models.Por
 	}
 
 	return &p, nil
+}
+
+// GetPortfolio retrieves a portfolio by user ID
+func (s *PortfolioServiceImpl) GetPortfolio(ctx context.Context, userID string) (*models.Portfolio, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("user_id is required and cannot be empty")
+	}
+
+	portfolio, err := s.portfolioRepository.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("portfolio not found for user %s: %w", userID, err)
+	}
+
+	return portfolio, nil
+}
+
+// UpdatePortfolio updates an existing portfolio's current allocation
+func (s *PortfolioServiceImpl) UpdatePortfolio(ctx context.Context, portfolio models.Portfolio) error {
+	if portfolio.UserID == "" {
+		return fmt.Errorf("user_id is required and cannot be empty")
+	}
+
+	// Validate allocation if provided
+	if len(portfolio.Allocation) > 0 {
+		if err := models.ValidateAllocation(portfolio.Allocation); err != nil {
+			return err
+		}
+	}
+
+	if err := s.portfolioRepository.Save(ctx, portfolio); err != nil {
+		return fmt.Errorf("failed to update portfolio: %w", err)
+	}
+
+	return nil
 }

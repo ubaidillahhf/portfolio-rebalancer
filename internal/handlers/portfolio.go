@@ -18,9 +18,8 @@ func NewPortfolioHandler(mux *http.ServeMux, portfolioService services.Portfolio
 		portfolioService: portfolioService,
 	}
 
-	// Register routes with logging middleware
+	// Register routes
 	mux.HandleFunc("/portfolio", handler.HandlePortfolio)
-	mux.HandleFunc("/rebalance", handler.HandleRebalance)
 }
 
 // Uses HTTP method to determine action - proper REST design
@@ -61,27 +60,4 @@ func (h *PortfolioHandler) handleCreatePortfolio(w http.ResponseWriter, r *http.
 	}
 
 	RespondWithJSON(w, http.StatusCreated, createdPortfolio)
-}
-
-// HandleRebalance handles portfolio rebalance requests from 3rd party provider (feel free to update the request parameter/model)
-// Sample Request (POST /rebalance):
-//
-//	{
-//	    "user_id": "1",
-//	    "new_allocation": {"stocks": 70, "bonds": 20, "gold": 10}
-//	}
-func (h *PortfolioHandler) HandleRebalance(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req models.UpdatedPortfolio
-	json.NewDecoder(r.Body).Decode(&req)
-
-	log.Println("HandleRebalance==", req)
-
-	// TODO: Add Logic here
-
-	w.WriteHeader(http.StatusOK)
 }

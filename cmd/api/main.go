@@ -1,15 +1,20 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
-	"portfolio-rebalancer/internal/handlers"
-	"portfolio-rebalancer/internal/repository"
-	"portfolio-rebalancer/internal/services"
-	"portfolio-rebalancer/internal/storage"
 	"time"
 
+	"portfolio-rebalancer/internal/handlers"
+	"portfolio-rebalancer/internal/messaging"
+	"portfolio-rebalancer/internal/repository"
+	"portfolio-rebalancer/internal/services"
+	"portfolio-rebalancer/pkg/elasticsearch"
+	"portfolio-rebalancer/pkg/kafka"
+
 	"github.com/joho/godotenv"
+	kafkago "github.com/segmentio/kafka-go"
 )
 
 func main() {
@@ -20,25 +25,45 @@ func main() {
 
 	// Initialize Elasticsearch for storing portfolios and transactions
 	// Retries connection up to 5 times with 5-second delays
-	if err := storage.InitElastic(); err != nil {
+	if err := elasticsearch.Init(); err != nil {
 		log.Fatalf("Failed to initialize Elasticsearch: %v", err)
 	}
 
 	// Get Elasticsearch client
-	esClient := storage.GetElasticsearchClient()
+	esClient := elasticsearch.GetClient()
 
 	// Initialize repositories
 	portfolioRepo := repository.NewPortfolioRepository(esClient)
+	transactionRepo := repository.NewTransactionRepository(esClient)
 
+	// Initialize Kafka producer for async transaction processing
+	// Non-fatal if Kafka is unavailable (graceful degradation)
+	var publisher messaging.Publisher
+	if err := kafka.Init(); err != nil {
+		log.Printf("Warning: Failed to initialize Kafka: %v", err)
+	} else {
+		publisher = kafka.NewPublisher(kafka.GetWriter())
+	}
+
+	// Services
 	portfolioService := services.NewPortfolioService(portfolioRepo)
+	rebalanceService := services.NewRebalanceService(transactionRepo, publisher)
+
+	// Start Kafka consumer to process rebalance transactions asynchronously
+	// Runs in background goroutine, processing messages from the queue
+	ctx := context.Background()
+	if err := kafka.StartConsumer(ctx, func(ctx context.Context, msg kafkago.Message) error {
+		return rebalanceService.ProcessTransactions(ctx, msg.Value)
+	}); err != nil {
+		log.Printf("Warning: Failed to start Kafka consumer: %v", err)
+	}
 
 	// Create HTTP router
 	mux := http.NewServeMux()
 
+	// Register handlers - each with single responsibility
 	handlers.NewPortfolioHandler(mux, portfolioService)
-
-	//http.HandleFunc("/portfolio", handlers.HandlePortfolio)
-	//http.HandleFunc("/rebalance", handlers.HandleRebalance)
+	handlers.NewRebalanceHandler(mux, rebalanceService, portfolioService)
 
 	server := &http.Server{
 		Addr:         ":8081",

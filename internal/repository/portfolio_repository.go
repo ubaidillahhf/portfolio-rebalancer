@@ -14,6 +14,7 @@ import (
 
 type PortfolioRepository interface {
 	Save(ctx context.Context, portfolio models.Portfolio) error
+	GetByUserID(ctx context.Context, userID string) (*models.Portfolio, error)
 }
 
 // PortfolioRepository implements PortfolioRepository using Elasticsearch
@@ -52,4 +53,30 @@ func (r *PortfolioRepositoryImpl) Save(ctx context.Context, p models.Portfolio) 
 
 	log.Printf("Portfolio saved for user %s", p.UserID)
 	return nil
+}
+
+// GetByUserID retrieves a portfolio by user ID from Elasticsearch
+func (r *PortfolioRepositoryImpl) GetByUserID(ctx context.Context, userID string) (*models.Portfolio, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	res, err := r.client.Get("portfolios", userID, r.client.Get.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	var esResp struct {
+		Source models.Portfolio `json:"_source"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
+		return nil, err
+	}
+
+	return &esResp.Source, nil
 }
