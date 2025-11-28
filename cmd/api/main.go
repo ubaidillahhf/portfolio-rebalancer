@@ -4,6 +4,9 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"portfolio-rebalancer/internal/handlers"
@@ -49,9 +52,12 @@ func main() {
 	portfolioService := services.NewPortfolioService(portfolioRepo)
 	rebalanceService := services.NewRebalanceService(transactionRepo, publisher)
 
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Start Kafka consumer to process rebalance transactions asynchronously
 	// Runs in background goroutine, processing messages from the queue
-	ctx := context.Background()
 	if err := kafka.StartConsumer(ctx, func(ctx context.Context, msg kafkago.Message) error {
 		return rebalanceService.ProcessTransactions(ctx, msg.Value)
 	}); err != nil {
@@ -66,13 +72,49 @@ func main() {
 	handlers.NewRebalanceHandler(mux, rebalanceService, portfolioService)
 
 	server := &http.Server{
-		Addr:         ":8081",
+		Addr:         ":8080",
 		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Println("Server started at :8081")
-	log.Fatal(server.ListenAndServe())
+	// Channel to listen for interrupt signals
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start server in a goroutine
+	go func() {
+		log.Println("Server started at :8080")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	<-quit
+	log.Println("Shutting down server gracefully...")
+
+	// Cancel context to stop Kafka consumer
+	cancel()
+
+	// Create shutdown context with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	// Shutdown HTTP server gracefully
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	// Close Kafka writer if it exists
+	if writer := kafka.GetWriter(); writer != nil {
+		if err := writer.Close(); err != nil {
+			log.Printf("Error closing Kafka writer: %v", err)
+		} else {
+			log.Println("Kafka writer closed")
+		}
+	}
+
+	log.Println("Server stopped gracefully")
 }
