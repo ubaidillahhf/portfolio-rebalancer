@@ -74,6 +74,8 @@ func (h *RebalanceHandler) HandleRebalance(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Calculate rebalance transactions
+	// Compare new allocation (from 3rd party provider) against target allocation (original portfolio)
+	// This tells us what to BUY/SELL to get back to the target
 	transactions := h.rebalanceService.CalculateRebalance(req.NewAllocation, portfolio.OriginalAllocation, req.UserID)
 
 	// Publish transactions for async processing

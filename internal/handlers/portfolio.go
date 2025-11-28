@@ -25,6 +25,8 @@ func NewPortfolioHandler(mux *http.ServeMux, portfolioService services.Portfolio
 // Uses HTTP method to determine action - proper REST design
 func (h *PortfolioHandler) HandlePortfolio(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
+	case http.MethodGet:
+		h.handleGetPortfolio(w, r)
 	case http.MethodPost:
 		h.handleCreatePortfolio(w, r)
 	default:
@@ -60,4 +62,24 @@ func (h *PortfolioHandler) handleCreatePortfolio(w http.ResponseWriter, r *http.
 	}
 
 	RespondWithJSON(w, http.StatusCreated, createdPortfolio)
+}
+
+// handleGetPortfolio retrieves a user's portfolio
+// GET /portfolio?user_id=1
+func (h *PortfolioHandler) handleGetPortfolio(w http.ResponseWriter, r *http.Request) {
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		RespondWithError(w, http.StatusBadRequest, "user_id query parameter is required")
+		return
+	}
+
+	portfolio, err := h.portfolioService.GetPortfolio(r.Context(), userID)
+	if err != nil {
+		log.Printf("Failed to get portfolio for user %s: %v", userID, err)
+		RespondWithError(w, http.StatusNotFound, "Portfolio not found for user "+userID)
+		return
+	}
+
+	log.Printf("Portfolio retrieved for user %s", userID)
+	RespondWithJSON(w, http.StatusOK, portfolio)
 }
